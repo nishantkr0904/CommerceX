@@ -1,6 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import helmet from 'helmet';
+import compression from 'compression';
+import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import connectDB from './config/mongodb.js';
@@ -20,19 +23,70 @@ import orderRouter from './routes/orderRoute.js';
 
 
 const app = express();
-app.use(cors({
-  origin: process.env.NODE_ENV === 'production'
-    ? process.env.FRONTEND_URL
-    : true, // Allow all origins in development
-  credentials: true
-}));
+app.disable('x-powered-by');
+
+if (process.env.NODE_ENV === 'production') {
+  // Helps Express correctly identify client IPs behind a reverse proxy (Render/Nginx/etc.)
+  app.set('trust proxy', 1);
+}
+
+// Basic production middleware (must run before routes)
+app.use(helmet());
+app.use(compression());
+
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 100,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many requests, please try again later.' }
+});
+app.use(limiter);
+
+const parseAllowedOrigins = (value) =>
+  (value || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+const allowedOrigins = parseAllowedOrigins(process.env.FRONTEND_URL);
+
+// In development, provide a sensible default if FRONTEND_URL is missing.
+// In production, require explicit allowlist via FRONTEND_URL.
+const effectiveAllowedOrigins =
+  allowedOrigins.length > 0
+    ? allowedOrigins
+    : process.env.NODE_ENV === 'production'
+      ? []
+      : ['http://localhost:5173', 'http://localhost:5174'];
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Allow non-browser requests (no Origin header), e.g., curl/health checks.
+      if (!origin) return callback(null, true);
+
+      if (effectiveAllowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true
+  })
+);
 const port = process.env.PORT || 4000;
 connectDB()
 connectCloudinary()
 
 //middleware
 app.use(express.json());
-app.use(cors())
+
+// Health check (for uptime monitoring / load balancers)
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'OK' });
+});
+
 
 //api endpoints
 app.use('/api/user',userRouter)
@@ -70,6 +124,32 @@ app.get('/order', (req,res)=>{
 app.get('/product', (req, res)=>{
     res.send('products')
 })
+
+// Centralized error handler (keep after all routes)
+app.use((err, req, res, next) => {
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  // Default to 500; treat common CORS denials as 403.
+  const statusCode = err?.message === 'Not allowed by CORS' ? 403 : (err?.statusCode || 500);
+
+  if (!isProduction) {
+    console.error(err);
+    return res.status(statusCode).json({
+      success: false,
+      message: err?.message || 'Internal Server Error',
+      stack: err?.stack
+    });
+  }
+
+  if (statusCode >= 500) {
+    console.error('Internal Server Error');
+  }
+
+  return res.status(statusCode).json({
+    success: false,
+    message: statusCode === 403 ? 'CORS forbidden' : 'Internal Server Error'
+  });
+});
 
 app.listen(port, () => {
     console.log(`Server is running on port ${port}`);
