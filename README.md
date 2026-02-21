@@ -86,6 +86,10 @@ Ecommerce/
 └── admin/        # Admin React dashboard
 ```
 
+## Security Notes
+
+Remaining high-severity vulnerabilities (as reported by `npm audit`) are transitive dependencies related to the `bcrypt` native module build chain (e.g., `@mapbox/node-pre-gyp` → `tar`, and `glob` → `minimatch`). These require major version upgrades and will be addressed in a controlled Phase 2 hardening/refactor.
+
 ---
 
 Built as a portfolio project to showcase full‑stack e‑commerce architecture, security, and integration skills.
