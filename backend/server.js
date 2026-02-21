@@ -31,7 +31,18 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // Basic production middleware (must run before routes)
-app.use(helmet());
+const helmetCspDirectives = helmet.contentSecurityPolicy.getDefaultDirectives();
+helmetCspDirectives['script-src'] = [
+  ...new Set([...(helmetCspDirectives['script-src'] || ["'self'"]), 'https://checkout.razorpay.com'])
+];
+
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: helmetCspDirectives
+    }
+  })
+);
 app.use(compression());
 
 const limiter = rateLimit({
@@ -61,18 +72,26 @@ const effectiveAllowedOrigins =
       : ['http://localhost:5173', 'http://localhost:5174'];
 
 app.use(
-  cors({
-    origin(origin, callback) {
-      // Allow non-browser requests (no Origin header), e.g., curl/health checks.
-      if (!origin) return callback(null, true);
+  cors((req, callback) => {
+    const origin = req.header('Origin');
 
-      if (effectiveAllowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
+    // Allow non-browser requests (no Origin header), e.g., curl/health checks.
+    if (!origin) {
+      return callback(null, { origin: false, credentials: true });
+    }
 
-      return callback(new Error('Not allowed by CORS'));
-    },
-    credentials: true
+    // Always allow same-origin requests (backend serving its own frontend/static assets).
+    const requestOrigin = `${req.protocol}://${req.get('host')}`;
+    if (origin === requestOrigin) {
+      return callback(null, { origin: true, credentials: true });
+    }
+
+    // Strict allowlist for cross-origin requests.
+    if (effectiveAllowedOrigins.includes(origin)) {
+      return callback(null, { origin: true, credentials: true });
+    }
+
+    return callback(new Error('Not allowed by CORS'));
   })
 );
 const port = process.env.PORT || 4000;
