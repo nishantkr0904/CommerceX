@@ -113,36 +113,10 @@ app.use('/api/product',productRouter)
 app.use('/api/cart',cartRouter)
 app.use('/api/order',orderRouter)
 
-
-//-------------------deployement-----------------------
-
-const __dirname1 = path.resolve();
-if(process.env.NODE_ENV === 'production'){
-  app.use(express.static(path.join(__dirname1, "frontend/dist")));
-  app.get('*',(req,res)=>{
-    res.sendFile(path.resolve(__dirname1, "frontend", "dist", "index.html"));
-  });
-} else {
-  app.get("/", (req,res)=>{
-    res.send("API is running successfully");
-  });
-}
-
-//-------------------deployement-----------------------
-
-
-app.get('/user', (req, res)=>{
-    res.send('user')
-})
-app.get('/cart', (req,res)=>{
-    res.send("cart")
-})
-app.get('/order', (req,res)=>{
-    res.send('orders')
-})
-app.get('/product', (req, res)=>{
-    res.send('products')
-})
+// Root route
+app.get('/', (req, res) => {
+  res.json({ success: true, message: 'API is running' });
+});
 
 // Centralized error handler (keep after all routes)
 app.use((err, req, res, next) => {
